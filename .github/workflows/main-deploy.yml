@@ -62,6 +62,15 @@ jobs:
             echo "Stopping existing Plane containers..."
             docker-compose down || true
             
+            # Force stop any remaining containers using ports 80/443
+            echo "Force stopping containers using ports 80/443..."
+            docker stop $(docker ps -q --filter "publish=80") 2>/dev/null || true
+            docker stop $(docker ps -q --filter "publish=443") 2>/dev/null || true
+            
+            # Remove any stopped containers
+            echo "Cleaning up stopped containers..."
+            docker container prune -f || true
+            
             # Pull the AIO image
             echo "Pulling new AIO image..."
             docker pull ghcr.io/${{ needs.build.outputs.owner }}/furlong-aio:${{ needs.build.outputs.tag }}
