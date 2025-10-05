@@ -187,11 +187,30 @@ wait_for_service() {
             return 0
         fi
         echo "Attempt $attempt/$max_attempts: $name not ready yet..."
+        
+        # Check if the process is still running
+        local pid_file="/tmp/${name}.pid"
+        if [ -f "$pid_file" ]; then
+            local pid=$(cat "$pid_file")
+            if ! kill -0 "$pid" 2>/dev/null; then
+                echo "❌ $name service process (PID: $pid) has died"
+                echo "Error logs:"
+                cat "/app/logs/error/${name}.err.log" 2>/dev/null || echo "No error log found"
+                echo "Output logs:"
+                cat "/app/logs/access/${name}.log" 2>/dev/null || echo "No output log found"
+                return 1
+            fi
+        fi
+        
         sleep 2
         attempt=$((attempt + 1))
     done
     
     echo "❌ $name service failed to start within timeout"
+    echo "Error logs:"
+    cat "/app/logs/error/${name}.err.log" 2>/dev/null || echo "No error log found"
+    echo "Output logs:"
+    cat "/app/logs/access/${name}.log" 2>/dev/null || echo "No output log found"
     return 1
 }
 
@@ -211,7 +230,7 @@ main(){
     ./bin/docker-entrypoint-migrator.sh || echo "Migration completed or failed (continuing...)"
 
     # Start API service
-    start_service "api" "cd /app/backend && ./bin/docker-entrypoint-api.sh"
+    start_service "api" "cd /app/backend && PORT=3004 GUNICORN_WORKERS=2 DJANGO_SETTINGS_MODULE=plane.settings.production ./bin/docker-entrypoint-api.sh"
     wait_for_service "api" 3004
 
     # Start worker service
