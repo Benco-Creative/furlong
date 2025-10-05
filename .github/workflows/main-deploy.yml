@@ -57,17 +57,30 @@ jobs:
           script: |
             set -e
             cd /opt/plane/plane-app
+            
+            # Stop all existing plane containers
+            echo "Stopping existing Plane containers..."
+            docker-compose down || true
+            
             # Pull the AIO image
+            echo "Pulling new AIO image..."
             docker pull ghcr.io/${{ needs.build.outputs.owner }}/furlong-aio:${{ needs.build.outputs.tag }}
-            # Stop any existing containers
-            docker stop furlong-aio || true
-            docker rm furlong-aio || true
-            # Run the AIO container
+            
+            # Create backup of current plane.env
+            echo "Backing up current configuration..."
+            cp plane.env plane.env.backup.$(date +%Y%m%d_%H%M%S) || true
+            
+            # Run the AIO container with environment file
+            echo "Starting AIO container..."
             docker run -d \
               --name furlong-aio \
               --restart unless-stopped \
               -p 80:80 \
               -p 443:443 \
-              -v furlong-data:/app/data \
-              -v furlong-logs:/app/logs \
+              --env-file plane.env \
+              -v plane-app_pgdata:/app/data/postgres \
+              -v plane-app_uploads:/app/data/uploads \
+              -v plane-app_logs_api:/app/logs \
               ghcr.io/${{ needs.build.outputs.owner }}/furlong-aio:${{ needs.build.outputs.tag }}
+            
+            echo "Deployment completed successfully!"
