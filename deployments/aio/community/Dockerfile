@@ -1,68 +1,121 @@
-ARG PLANE_VERSION=v0.27.1
-FROM --platform=$BUILDPLATFORM tonistiigi/binfmt AS binfmt
+# AIO image that builds from YOUR monorepo (pnpm workspaces + Django in apps/api)
 
-# **************************************************
-#  STAGE 0: Image Loading
-# **************************************************
-FROM node:22-alpine AS node
+ARG NODE_VERSION=22
+ARG PYTHON_IMAGE=python:3.12.10-alpine
 
-FROM artifacts.plane.so/makeplane/plane-frontend:${PLANE_VERSION} AS web-img
-FROM artifacts.plane.so/makeplane/plane-backend:${PLANE_VERSION} AS backend-img
-FROM artifacts.plane.so/makeplane/plane-space:${PLANE_VERSION} AS space-img
-FROM artifacts.plane.so/makeplane/plane-admin:${PLANE_VERSION} AS admin-img
-FROM artifacts.plane.so/makeplane/plane-live:${PLANE_VERSION} AS live-img
-FROM artifacts.plane.so/makeplane/plane-proxy:${PLANE_VERSION} AS proxy-img
+# ========== STAGE: build web apps (Next.js) ==========
+FROM node:${NODE_VERSION}-alpine AS build-web
+WORKDIR /repo
 
-# **************************************************
-#  STAGE 1: Runner
-# **************************************************
-FROM python:3.12.10-alpine AS runner
+# Enable pnpm
+RUN corepack enable && corepack prepare pnpm@latest --activate
 
+# Copy root workspace manifests first for better caching
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+
+# Copy only package manifests from packages/ and apps/ to warm the install cache
+COPY packages/ui/package.json                 packages/ui/
+COPY packages/types/package.json              packages/types/
+COPY packages/tailwind-config/package.json    packages/tailwind-config/
+COPY packages/logger/package.json             packages/logger/
+COPY packages/decorators/package.json         packages/decorators/
+COPY packages/constants/package.json          packages/constants/
+COPY packages/shared-state/package.json       packages/shared-state/
+COPY packages/utils/package.json              packages/utils/
+COPY packages/eslint-config/package.json      packages/eslint-config/
+COPY packages/hooks/package.json              packages/hooks/
+COPY packages/propel/package.json             packages/propel/
+COPY packages/typescript-config/package.json  packages/typescript-config/
+COPY packages/i18n/package.json               packages/i18n/
+COPY packages/services/package.json           packages/services/
+COPY packages/editor/package.json             packages/editor/
+
+COPY apps/web/package.json    apps/web/
+COPY apps/admin/package.json  apps/admin/
+COPY apps/live/package.json   apps/live/
+COPY apps/space/package.json  apps/space/
+
+# Install workspace deps
+RUN pnpm install --frozen-lockfile
+
+# Now bring in the full sources and build each app
+COPY packages ./packages
+COPY apps ./apps
+
+# Build each Next app by path (filters by directory; works without knowing package names)
+RUN pnpm --filter ./apps/web   build && \
+    pnpm --filter ./apps/admin build && \
+    pnpm --filter ./apps/live  build && \
+    pnpm --filter ./apps/space build
+
+# After this, each app will have its .next build output within apps/<name>.
+
+# ========== STAGE: build backend (Django in apps/api) ==========
+FROM ${PYTHON_IMAGE} AS build-backend
+WORKDIR /repo
+
+# Build deps for common Python packages (psycopg, lxml, etc.)
+RUN apk add --no-cache gcc musl-dev python3-dev libffi-dev cargo postgresql-dev
+
+# Copy only dependency files first (if present)
+COPY apps/api/requirements*.txt apps/api/ 2>/dev/null || true
+COPY apps/api/pyproject.toml apps/api/poetry.lock apps/api/ 2>/dev/null || true
+
+# Install backend deps (support both requirements or poetry)
+# Prefer requirements*.txt if present; else try poetry; else skip
+RUN if [ -f apps/api/requirements.txt ]; then \
+      pip install --no-cache-dir -r apps/api/requirements.txt ; \
+    elif [ -f apps/api/requirements-prod.txt ]; then \
+      pip install --no-cache-dir -r apps/api/requirements-prod.txt ; \
+    elif [ -f apps/api/pyproject.toml ]; then \
+      pip install --no-cache-dir poetry && \
+      cd apps/api && poetry config virtualenvs.create false && poetry install --only main --no-interaction --no-ansi ; \
+    else \
+      echo "No requirements/poetry files detected; assuming vendored deps or will install on runner"; \
+    fi
+
+# Copy full backend source
+COPY apps/api ./apps/api
+
+# (Optional) collectstatic can be done at runtime; skipping here to avoid needing DB
+# ENV DJANGO_SETTINGS_MODULE=apps.api.settings
+# RUN python apps/api/manage.py collectstatic --noinput || true
+
+# ========== STAGE: runner (includes Node for next start + Python for Django) ==========
+FROM ${PYTHON_IMAGE} AS runner
 WORKDIR /app
 
-RUN apk add --no-cache \
-    "libpq" \
-    "libxslt" \
-    "xmlsec"
+# OS libs similar to upstream AIO
+RUN apk add --no-cache libpq libxslt xmlsec nss-tools bash curl uuidgen ncdu vim
 
+# Bring in Node runtime for Next.js "next start" if needed
+COPY --from=node:${NODE_VERSION}-alpine /usr/local /usr/local
 
-COPY --from=node /usr/lib /usr/lib
-COPY --from=node /usr/local/lib /usr/local/lib
-COPY --from=node /usr/local/include /usr/local/include
-COPY --from=node /usr/local/bin /usr/local/bin
+# Copy built web apps from build-web
+COPY --from=build-web /repo/apps/web   /app/web
+COPY --from=build-web /repo/apps/admin /app/admin
+COPY --from=build-web /repo/apps/live  /app/live
+COPY --from=build-web /repo/apps/space /app/space
 
-COPY --from=web-img /app /app/web
-COPY --from=space-img /app /app/space
-COPY --from=admin-img /app /app/admin
-COPY --from=live-img /app /app/live
+# Copy backend deps and code from build-backend
+COPY --from=build-backend /usr/local/lib/python3.12/site-packages/ /usr/local/lib/python3.12/site-packages/
+COPY --from=build-backend /usr/local/bin/ /usr/local/bin/
+COPY --from=build-backend /repo/apps/api /app/backend
 
-RUN rm -rf /app/web/apps/web/.next/cache && \
-    rm -rf /app/space/apps/space/.next/cache && \
-    rm -rf /app/admin/apps/admin/.next/cache
-
+# Caddy binary from upstream proxy image (matches community AIO)
+FROM artifacts.plane.so/makeplane/plane-proxy:v1.0.0 AS proxy-img
 COPY --from=proxy-img /usr/bin/caddy /usr/bin/caddy
-COPY dist/Caddyfile /app/proxy/Caddyfile
 
-COPY --from=backend-img /code /app/backend
-COPY --from=backend-img /usr/local/lib/python3.12/site-packages/ /usr/local/lib/python3.12/site-packages/
-COPY --from=backend-img /usr/local/bin/ /usr/local/bin/
+# AIO control files from your repo (these exist in the community AIO folder)
+# They define supervisor programs to run api + next apps + caddy
+COPY deployments/aio/community/dist/Caddyfile         /app/proxy/Caddyfile
+COPY deployments/aio/community/start.sh               /app/start.sh
+COPY deployments/aio/community/supervisor.conf        /etc/supervisor/conf.d/supervisor.conf
+COPY deployments/aio/community/dist/plane.env         /app/plane.env
 
-RUN apk add --no-cache nss-tools bash curl uuidgen ncdu vim
+RUN mkdir -p /app/logs/access /app/logs/error /app/data \
+ && chmod +x /app/start.sh
 
-RUN pip install supervisor
-RUN mkdir -p /etc/supervisor/conf.d
-
-COPY start.sh /app/start.sh
-COPY dist/plane.env /app/plane.env
-COPY supervisor.conf /etc/supervisor/conf.d/supervisor.conf
-
-RUN mkdir -p /app/logs/access && \
-    mkdir -p /app/logs/error && \
-    mkdir -p /app/data && \
-    chmod +x /app/start.sh
-
-VOLUME ['/app/data', '/app/logs']
-
+VOLUME ["/app/data", "/app/logs"]
 EXPOSE 80 443
-
-CMD ["/app/start.sh"] 
+CMD ["/app/start.sh"]
