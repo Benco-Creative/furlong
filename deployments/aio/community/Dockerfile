@@ -86,7 +86,7 @@ FROM python:3.12.10-alpine AS runner
 WORKDIR /app
 
 # OS libs similar to upstream AIO
-RUN apk add --no-cache libpq libxslt xmlsec nss-tools bash curl uuidgen ncdu vim
+RUN apk add --no-cache libpq libxslt xmlsec nss-tools bash curl uuidgen ncdu vim supervisor
 
 # Bring in Node runtime for Next.js "next start" if needed
 COPY --from=node:22-alpine /usr/local /usr/local
