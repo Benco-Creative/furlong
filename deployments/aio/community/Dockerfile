@@ -86,7 +86,7 @@ FROM python:3.12.10-alpine AS runner
 WORKDIR /app
 
 # OS libs similar to upstream AIO
-RUN apk add --no-cache libpq libxslt xmlsec nss-tools bash curl uuidgen ncdu vim supervisor
+RUN apk add --no-cache libpq libxslt xmlsec nss-tools bash curl uuidgen ncdu vim
 
 # Bring in Node runtime for Next.js "next start" if needed
 COPY --from=node:22-alpine /usr/local /usr/local
@@ -106,10 +106,9 @@ COPY --from=build-backend /repo/apps/api /app/backend
 RUN apk add --no-cache caddy
 
 # AIO control files from your repo (these exist in the community AIO folder)
-# They define supervisor programs to run api + next apps + caddy
+# Using simple startup script instead of supervisor
 COPY apps/proxy/Caddyfile.ce         /app/proxy/Caddyfile
-COPY deployments/aio/community/start.sh               /app/start.sh
-COPY deployments/aio/community/supervisor.conf        /etc/supervisor/conf.d/supervisor.conf
+COPY deployments/aio/community/simple-start.sh       /app/start.sh
 COPY deployments/aio/community/variables.env         /app/plane.env
 
 RUN mkdir -p /app/logs/access /app/logs/error /app/data \

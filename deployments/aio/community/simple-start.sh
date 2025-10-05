@@ -3,7 +3,7 @@
 print_header(){
     clear
     echo "------------------------------------------------"
-    echo "Plane Community (All-In-One)"
+    echo "Plane Community (All-In-One) - Simple Mode"
     echo "------------------------------------------------"
     echo ""
     echo "You are required to pass below environment variables to the script"
@@ -155,6 +155,46 @@ update_env_file(){
     echo ""
 }
 
+# Function to start a service in background
+start_service() {
+    local name="$1"
+    local command="$2"
+    local log_file="/app/logs/access/${name}.log"
+    local error_log="/app/logs/error/${name}.err.log"
+    
+    echo "Starting $name service..."
+    mkdir -p /app/logs/access /app/logs/error
+    
+    # Start service in background and redirect output
+    eval "$command" > "$log_file" 2> "$error_log" &
+    local pid=$!
+    echo "$pid" > "/tmp/${name}.pid"
+    echo "✅ $name service started (PID: $pid)"
+}
+
+# Function to wait for a service to be ready
+wait_for_service() {
+    local name="$1"
+    local port="$2"
+    local max_attempts=30
+    local attempt=1
+    
+    echo "Waiting for $name service to be ready on port $port..."
+    
+    while [ $attempt -le $max_attempts ]; do
+        if nc -z localhost $port 2>/dev/null; then
+            echo "✅ $name service is ready on port $port"
+            return 0
+        fi
+        echo "Attempt $attempt/$max_attempts: $name not ready yet..."
+        sleep 2
+        attempt=$((attempt + 1))
+    done
+    
+    echo "❌ $name service failed to start within timeout"
+    return 1
+}
+
 main(){
     print_header
     check_pre_requisites
@@ -163,7 +203,40 @@ main(){
     # load plane.env as exported variables
     export $(grep -v '^#' plane.env | xargs)
 
-    /usr/bin/supervisord -c /etc/supervisor/conf.d/supervisor.conf
+    echo "Starting services in simple mode..."
+    
+    # Start migrator first (runs once)
+    echo "Running database migrations..."
+    cd /app/backend
+    ./bin/docker-entrypoint-migrator.sh || echo "Migration completed or failed (continuing...)"
+
+    # Start API service
+    start_service "api" "cd /app/backend && ./bin/docker-entrypoint-api.sh"
+    wait_for_service "api" 3004
+
+    # Start worker service
+    start_service "worker" "cd /app/backend && ./bin/docker-entrypoint-worker.sh"
+
+    # Start beat service
+    start_service "beat" "cd /app/backend && ./bin/docker-entrypoint-beat.sh"
+
+    # Start web services
+    start_service "web" "cd /app/web && node apps/web/server.js"
+    wait_for_service "web" 3001
+
+    start_service "space" "cd /app/space && node apps/space/server.js"
+    wait_for_service "space" 3002
+
+    start_service "admin" "cd /app/admin && node apps/admin/server.js"
+    wait_for_service "admin" 3003
+
+    start_service "live" "cd /app/live && node live/server.js"
+    wait_for_service "live" 3005
+
+    # Start proxy last (Caddy)
+    echo "Starting Caddy proxy..."
+    cd /app/proxy
+    caddy run --config /app/proxy/Caddyfile
 }
 
 main "$@"
