@@ -1,0 +1,36 @@
+name: Upstream Sync
+on:
+  schedule:
+    - cron: "0 7 * * 1"   # Mondays 07:00 UTC
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Add upstream & fetch
+        run: |
+          git remote add upstream https://github.com/makeplane/plane.git || true
+          git fetch upstream --tags
+
+      - name: Merge upstream/main into a sync branch
+        run: |
+          git checkout -B chore/upstream-sync
+          git merge --no-edit upstream/main || true
+          git push -u origin chore/upstream-sync --force
+
+      - name: Open PR
+        uses: peter-evans/create-pull-request@v6
+        with:
+          branch: chore/upstream-sync
+          title: "Sync: upstream/main → main"
+          body: "Automated upstream sync. Review, test, merge to deploy."
+          base: main
+          labels: upstream-sync
