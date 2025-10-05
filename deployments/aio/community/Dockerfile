@@ -4,7 +4,7 @@ ARG NODE_VERSION=22
 ARG PYTHON_IMAGE=python:3.12.10-alpine
 
 # ========== STAGE: build web apps (Next.js) ==========
-FROM node:${NODE_VERSION}-alpine AS build-web
+FROM node:22-alpine AS build-web
 WORKDIR /repo
 
 # Enable pnpm
@@ -51,7 +51,7 @@ RUN pnpm --filter ./apps/web   build && \
 # After this, each app will have its .next build output within apps/<name>.
 
 # ========== STAGE: build backend (Django in apps/api) ==========
-FROM ${PYTHON_IMAGE} AS build-backend
+FROM python:3.12.10-alpine AS build-backend
 WORKDIR /repo
 
 # Build deps for common Python packages (psycopg, lxml, etc.)
@@ -82,14 +82,14 @@ COPY apps/api ./apps/api
 # RUN python apps/api/manage.py collectstatic --noinput || true
 
 # ========== STAGE: runner (includes Node for next start + Python for Django) ==========
-FROM ${PYTHON_IMAGE} AS runner
+FROM python:3.12.10-alpine AS runner
 WORKDIR /app
 
 # OS libs similar to upstream AIO
 RUN apk add --no-cache libpq libxslt xmlsec nss-tools bash curl uuidgen ncdu vim
 
 # Bring in Node runtime for Next.js "next start" if needed
-COPY --from=node:${NODE_VERSION}-alpine /usr/local /usr/local
+COPY --from=node:22-alpine /usr/local /usr/local
 
 # Copy built web apps from build-web
 COPY --from=build-web /repo/apps/web   /app/web
@@ -102,9 +102,8 @@ COPY --from=build-backend /usr/local/lib/python3.12/site-packages/ /usr/local/li
 COPY --from=build-backend /usr/local/bin/ /usr/local/bin/
 COPY --from=build-backend /repo/apps/api /app/backend
 
-# Caddy binary from upstream proxy image (matches community AIO)
-FROM artifacts.plane.so/makeplane/plane-proxy:v1.0.0 AS proxy-img
-COPY --from=proxy-img /usr/bin/caddy /usr/bin/caddy
+# Install Caddy directly instead of copying from external image
+RUN apk add --no-cache caddy
 
 # AIO control files from your repo (these exist in the community AIO folder)
 # They define supervisor programs to run api + next apps + caddy
