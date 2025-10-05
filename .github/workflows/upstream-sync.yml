@@ -23,7 +23,10 @@ jobs:
       - name: Merge upstream/main into a sync branch
         run: |
           git checkout -B chore/upstream-sync
-          git merge --no-edit upstream/main || true
+          if ! git merge --no-edit upstream/main; then
+            echo "Merge failed! Please resolve conflicts manually."
+            exit 1
+          fi
           git push -u origin chore/upstream-sync --force
 
       - name: Open PR
