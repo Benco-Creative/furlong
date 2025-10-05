@@ -58,15 +58,18 @@ WORKDIR /repo
 RUN apk add --no-cache gcc musl-dev python3-dev libffi-dev cargo postgresql-dev
 
 # Copy only dependency files first (if present)
-COPY apps/api/requirements*.txt apps/api/ 2>/dev/null || true
-COPY apps/api/pyproject.toml apps/api/poetry.lock apps/api/ 2>/dev/null || true
+COPY apps/api/requirements.txt apps/api/
+COPY apps/api/requirements/ apps/api/requirements/
+COPY apps/api/pyproject.toml apps/api/
 
 # Install backend deps (support both requirements or poetry)
 # Prefer requirements*.txt if present; else try poetry; else skip
 RUN if [ -f apps/api/requirements.txt ]; then \
       pip install --no-cache-dir -r apps/api/requirements.txt ; \
-    elif [ -f apps/api/requirements-prod.txt ]; then \
-      pip install --no-cache-dir -r apps/api/requirements-prod.txt ; \
+    elif [ -f apps/api/requirements/production.txt ]; then \
+      pip install --no-cache-dir -r apps/api/requirements/production.txt ; \
+    elif [ -f apps/api/requirements/base.txt ]; then \
+      pip install --no-cache-dir -r apps/api/requirements/base.txt ; \
     elif [ -f apps/api/pyproject.toml ]; then \
       pip install --no-cache-dir poetry && \
       cd apps/api && poetry config virtualenvs.create false && poetry install --only main --no-interaction --no-ansi ; \
