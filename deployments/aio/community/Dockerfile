@@ -42,11 +42,8 @@ RUN pnpm install --frozen-lockfile
 COPY packages ./packages
 COPY apps ./apps
 
-# Build each Next app by path (filters by directory; works without knowing package names)
-RUN pnpm --filter ./apps/web   build && \
-    pnpm --filter ./apps/admin build && \
-    pnpm --filter ./apps/live  build && \
-    pnpm --filter ./apps/space build
+# Build all packages and apps using Turbo (handles dependencies automatically)
+RUN pnpm build
 
 # After this, each app will have its .next build output within apps/<name>.
 
