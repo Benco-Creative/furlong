@@ -12,6 +12,7 @@ jobs:
       packages: write
     outputs:
       tag: ${{ steps.meta.outputs.tag }}
+
     steps:
       - uses: actions/checkout@v4
 
@@ -33,6 +34,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Build & push each service image (adjust file: paths if needed)
       - name: Build & push backend
         uses: docker/build-push-action@v6
         with:
