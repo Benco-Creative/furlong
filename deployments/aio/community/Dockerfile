@@ -107,10 +107,10 @@ RUN apk add --no-cache caddy
 
 # AIO control files from your repo (these exist in the community AIO folder)
 # They define supervisor programs to run api + next apps + caddy
-COPY deployments/aio/community/dist/Caddyfile         /app/proxy/Caddyfile
+COPY apps/proxy/Caddyfile.ce         /app/proxy/Caddyfile
 COPY deployments/aio/community/start.sh               /app/start.sh
 COPY deployments/aio/community/supervisor.conf        /etc/supervisor/conf.d/supervisor.conf
-COPY deployments/aio/community/dist/plane.env         /app/plane.env
+COPY deployments/aio/community/variables.env         /app/plane.env
 
 RUN mkdir -p /app/logs/access /app/logs/error /app/data \
  && chmod +x /app/start.sh
