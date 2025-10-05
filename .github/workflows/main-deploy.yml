@@ -79,14 +79,26 @@ jobs:
             echo "Backing up current configuration..."
             cp plane.env plane.env.backup.$(date +%Y%m%d_%H%M%S) || true
             
-            # Run the AIO container with environment file
+            # Run the AIO container with proper environment variables
             echo "Starting AIO container..."
             docker run -d \
               --name furlong-aio \
               --restart unless-stopped \
+              --network plane-app_default \
               -p 80:80 \
               -p 443:443 \
-              --env-file plane.env \
+              -e DOMAIN_NAME=furlong.madeitlookeasy.com \
+              -e DATABASE_URL=postgresql://plane:plane@plane-app-plane-db-1:5432/plane \
+              -e REDIS_URL=redis://plane-app-plane-redis-1:6379 \
+              -e AMQP_URL=amqp://plane:plane@plane-app-plane-mq-1:5672/plane \
+              -e AWS_REGION=us-east-1 \
+              -e AWS_ACCESS_KEY_ID=access-key \
+              -e AWS_SECRET_ACCESS_KEY=secret-key \
+              -e AWS_S3_BUCKET_NAME=uploads \
+              -e SECRET_KEY=60gp0byfz2dvffa45cxl20p1scy9xbpf6d8c5y0geejgkyp1b5 \
+              -e SITE_ADDRESS=:80 \
+              -e FILE_SIZE_LIMIT=5242880 \
+              -e APP_PROTOCOL=https \
               -v plane-app_pgdata:/app/data/postgres \
               -v plane-app_uploads:/app/data/uploads \
               -v plane-app_logs_api:/app/logs \
