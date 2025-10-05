@@ -163,7 +163,7 @@ main(){
     # load plane.env as exported variables
     export $(grep -v '^#' plane.env | xargs)
 
-    /usr/local/bin/supervisord -c /etc/supervisor/conf.d/supervisor.conf
+    /usr/bin/supervisord -c /etc/supervisor/conf.d/supervisor.conf
 }
 
 main "$@"
