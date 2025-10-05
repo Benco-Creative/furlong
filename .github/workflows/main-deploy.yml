@@ -56,5 +56,18 @@ jobs:
           port: ${{ secrets.SSH_PORT || 22 }}
           script: |
             set -e
-            cd /opt/plane/plane-app
-            bash ./deploy.sh "${{ needs.build.outputs.tag }}"
+            cd /opt/furlong
+            # Pull the AIO image
+            docker pull ghcr.io/${{ needs.build.outputs.owner }}/furlong-aio:${{ needs.build.outputs.tag }}
+            # Stop any existing containers
+            docker stop furlong-aio || true
+            docker rm furlong-aio || true
+            # Run the AIO container
+            docker run -d \
+              --name furlong-aio \
+              --restart unless-stopped \
+              -p 80:80 \
+              -p 443:443 \
+              -v furlong-data:/app/data \
+              -v furlong-logs:/app/logs \
+              ghcr.io/${{ needs.build.outputs.owner }}/furlong-aio:${{ needs.build.outputs.tag }}
