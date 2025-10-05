@@ -11,7 +11,7 @@ WORKDIR /repo
 RUN corepack enable && corepack prepare pnpm@latest --activate
 
 # Copy root workspace manifests first for better caching
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json ./
 
 # Copy only package manifests from packages/ and apps/ to warm the install cache
 COPY packages/ui/package.json                 packages/ui/
